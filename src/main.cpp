@@ -1,10 +1,10 @@
-#include "app_config.hpp" // Your AppConfig class
-#include "logger.hpp"     // Assuming your Logger class definition
+#include "app_config.hpp" 
+#include "logger.hpp"
 #include "order.hpp"      // For Order struct, readOrdersFromStream, enums, and toString helpers
 #include "orderbook.hpp" // For OrderBook class and OutputRecord struct
 #include "thread_safe_queue.hpp" 
 #include <thread>
-#include <iostream>       // For std::cerr, std::cout (though logger should handle most)
+#include <iostream>       // For std::cerr, std::cout
 #include <fstream>        // For std::ifstream and std::ofstream
 #include <vector>
 #include <map>
@@ -12,45 +12,45 @@
 #include <algorithm>      // For std::stable_sort
 #include "main.hpp"
 
+
 int main(int argc, char* argv[]) {
     AppConfig config("A matching engine for the stock market");
-    // Initialize logger. Name "MatchingEngineApp" seems appropriate.
-    // Logger configuration (file/level) will be set after parsing AppConfig.
+    // Initialize logger.
     Logger logger("MatchingEngineApp"); 
    
     if (!config.parse(argc, argv)) {
-        // AppConfig's parse method should have already printed errors/help.
         logger.error("Exiting due to argument parsing error or help request.");
         return 1; // Indicate failure
     }
 
-    // Configure logger based on parsed arguments
+    // Configure log level (the level of infos from error we want to see)
     LogLevel log_level = string_to_level(config.get_log_level());
     logger.set_level(log_level); 
-    // Example: if your logger supports setting an output file:
-    // if (!config.get_log_file().empty()) { logger.set_output_file(config.get_log_file()); }
 
 
     logger.info("Configuration loaded successfully:");
     logger.info("  Log Level:       ", config.get_log_level());
     logger.info("  Input File:      ", config.get_order_input_file());
     logger.info("  Output File:     ", config.get_order_result_output_file());
-    logger.info("  Queue Size:      ", config.get_queue_size()); // Assuming this is the queue size for jobs
-    // Assuming get_jobs() exists in your AppConfig, though not used in this core logic
-    // logger.info("  Number of Jobs:  ", config.get_jobs()); 
+    logger.info("  Queue Size:      ", config.get_queue_size());
 
-    // 1. Read all orders from the input CSV file
+
+    //Read all orders from the input CSV file
     std::vector<Order> all_input_orders;
+    // open the input file stream
     std::ifstream input_file_stream(config.get_order_input_file());
 
     if (!input_file_stream.is_open()) {
         logger.critical("Failed to open input order file: ", config.get_order_input_file());
-        return 1; // Critical error, cannot proceed
+        return 1; // Critical error, stop the program
     }
 
-    ThreadSafeQueue<Order> order_queue; // Assuming this is how you want to handle job queueing
+    //To have a thread safe queue wich means that multiple threads can work together
+    // without stealing each other's tasks
+    ThreadSafeQueue<Order> order_queue;
 
     // readOrdersFromStream is defined in order.cpp and declared in order.hpp
+
 
     std::atomic<bool> is_done_reading(false); // To signal when reading is done
 
@@ -70,18 +70,15 @@ int main(int argc, char* argv[]) {
 
     
 
-    // if (all_input_orders.empty() && config.get_order_input_file() != "/dev/null" && !config.get_order_input_file().empty()) {
-    //     logger.warn("No orders found in input file: ", config.get_order_input_file(), ". Output will be empty.");
-    // }
-    // logger.info("Total orders read from CSV: ", all_input_orders.size());
-
-    // 2. Order Book Management and Processing Loop
-    //    Map instrument name to its OrderBook instance
+    // Order Book Management and Processing Loop
+    //  Map instrument name to its OrderBook instance
     std::map<std::string, OrderBook> order_books; 
-    std::shared_ptr<ThreadSafeQueue<std::string>> output_log_queue; // Assuming you want to log output records in a thread-safe manner
+    std::shared_ptr<ThreadSafeQueue<std::string>> output_log_queue; // log output records in a thread-safe manner
+
     output_log_queue = std::make_shared<ThreadSafeQueue<std::string>>(); // Initialize the output log queue
+    
     std::atomic<bool> is_done_launching_jobs(false); // To signal when processing is done
-     std::thread launch_work_thread([&]() {
+    std::thread launch_work_thread([&]() {
     auto timer = TimingManager::ScopedTimer(
                 "Time Starting order processing threads for all instruments", 
                 logger
@@ -90,16 +87,16 @@ int main(int argc, char* argv[]) {
     while (!is_done_reading || order_queue.size() != 0) {
         // Process orders from the queue
         if (order_queue.size() == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Avoid busy-waiting, adjust as needed
+            std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Avoid busy-waiting
             continue;
         }
       Order order_request = order_queue.pop(); // Pop from the thread-safe queue
     // Pass by reference as OrderBook::addOrder takes Order&
         logger.debug("Processing incoming order request: ID=", order_request.order_id, 
                     ", Instrument=", order_request.instrument,
-                    ", Action=", orderActionToString(order_request.action), // Assumes orderActionToString is available
-                    ", Type=", orderTypeToString(order_request.type),       // Assumes orderTypeToString is available
-                    ", Side=", sideToString(order_request.side),           // Assumes sideToString is available
+                    ", Action=", orderActionToString(order_request.action),
+                    ", Type=", orderTypeToString(order_request.type), 
+                    ", Side=", sideToString(order_request.side),       
                     ", Qty=", order_request.quantity, 
                     ", Price=", order_request.price);
         
@@ -126,14 +123,13 @@ int main(int argc, char* argv[]) {
     std::thread read_orders_thread([&]() {
         {
             while(!is_done_launching_jobs){
-                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Avoid busy-waiting, adjust as needed
+                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Avoid waiting
             }
             auto timer = TimingManager::ScopedTimer(
                         "Time Stop processing threads for all instruments", 
                         logger
                     );
             for (auto & [instrument_name, book] : order_books){
-                // logger.info("Stopping processing thread for instrument: ", instrument_name);
                 book.stopProcessingThread(); // Stop the processing thread for each order book
             }
             is_done_processing_orders = true; // Signal that processing is done
@@ -142,15 +138,16 @@ int main(int argc, char* argv[]) {
 
     logger.info("All input orders have been processed by their respective order books.");
 
-    // 5. Write the sorted OutputRecord objects to the output CSV file
+    // Write the OutputRecord to the output CSV file
     std::ofstream output_file_stream(config.get_order_result_output_file());
     if (!output_file_stream.is_open()) {
         logger.critical("Failed to open output order result file: ", config.get_order_result_output_file());
-        return 1; // Critical error
+        return 1; // error
     }
 
     // Write the CSV header
     output_file_stream << "timestamp,order_id,instrument,side,type,quantity,price,action,status,executed_quantity,execution_price,counterparty_id\n";
+
 
     {
     auto timer = TimingManager::ScopedTimer(
@@ -158,13 +155,13 @@ int main(int argc, char* argv[]) {
         logger
     );
     
-        // Write each record
+        // Write each record in the output log queue to the output file
     while (!output_log_queue->empty()  || !is_done_processing_orders) {
         std::string record;
         if (output_log_queue->try_pop(record)) {
-        output_file_stream << record << "\n"; // Uses OutputRecord::operator<<
+        output_file_stream << record << "\n";
         } else {
-            std::this_thread::sleep_for(std::chrono::microseconds(10)); // Avoid busy-waiting, adjust as needed
+            std::this_thread::sleep_for(std::chrono::microseconds(10)); // Avoid waiting
         }
     }}
     output_file_stream.close();
@@ -181,5 +178,5 @@ int main(int argc, char* argv[]) {
         read_orders_thread.join(); // Wait for the reading thread to finish
     }
     logger.info("Matching engine run completed successfully.");
-    return 0; // Indicate success
+    return 0; // success
 }
