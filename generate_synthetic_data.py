@@ -15,39 +15,39 @@ ACTIONS = ["NEW", "MODIFY", "CANCEL"]
 def generate_order_data(num_lines, output_target):
     """
     Generates synthetic order data and writes it to the output_target.
-    output_target can be a file object or sys.stdout.
     """
     writer = csv.writer(output_target) 
     # Write header
     writer.writerow(["timestamp", "order_id", "instrument", "side", "type", "quantity", "price", "action"])
 
     # Initial values
-    # Using nanoseconds for timestamp, starting from a point similar to example
+    # Using nanoseconds for timestamp
     current_timestamp = int(time.time() * 1_000_000_000) 
     order_id_counter = 1
     
     # Keep track of active orders to allow for plausible MODIFY/CANCEL actions
-    # Each item is a dictionary: {"id": int, "instrument": str, "quantity": int, "price": float, "side": str, "type": str}
     active_orders = [] 
 
     for i in range(num_lines):
-        current_timestamp += random.randint(100, 10000) # Increment timestamp slightly for each order
+        current_timestamp += random.randint(100, 10000) # Increment timestamp
 
         action = ""
         # Determine action:
         # If no active orders, action must be NEW.
-        # Otherwise, choose among NEW, MODIFY, CANCEL with defined probabilities.
+        # Otherwise, choose among NEW, MODIFY, CANCEL.
+        # we define probabilities for each type of orders to have a realistic book
         if not active_orders:
             action = "NEW"
         else:
             action_choice_rand = random.random()
             if action_choice_rand < 0.70:  # 70% chance of NEW
                 action = "NEW"
-            elif action_choice_rand < 0.85:  # 15% chance of MODIFY (0.85 - 0.70)
+            elif action_choice_rand < 0.85:  # 15% chance of MODIFY
                 action = "MODIFY"
-            else:  # 15% chance of CANCEL (1.00 - 0.85)
+            else:  # 15% chance of CANCEL
                 action = "CANCEL"
         
+
         order_id_to_use = 0 # Will be set based on action
         instrument = random.choice(INSTRUMENTS)
         side = random.choice(SIDES)
@@ -68,7 +68,7 @@ def generate_order_data(num_lines, output_target):
             active_orders.append({
                 "id": order_id_to_use, 
                 "instrument": instrument, 
-                "quantity": quantity, # This is the original quantity
+                "quantity": quantity, # original quantity
                 "price": price,
                 "side": side,
                 "type": order_type
@@ -117,19 +117,13 @@ def generate_order_data(num_lines, output_target):
         elif price == 0.0 and action == "CANCEL": # Ensure CANCEL with price 0 is just "0"
             price_str = "0" 
 
-        writer.writerow([
-            current_timestamp,
-            order_id_to_use,
-            instrument,
-            side,
-            order_type,
-            quantity,
-            price_str,
-            action
-        ])
+        writer.writerow([current_timestamp, order_id_to_use, instrument, side,
+            order_type, quantity, price_str, action])
+
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate synthetic CSV order data.")
+    parser = argparse.ArgumentParser(description="Generate CSV order data")
     parser.add_argument(
         "num_lines", 
         type=int, 
