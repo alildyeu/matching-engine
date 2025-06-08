@@ -264,7 +264,6 @@ std::optional<Order> parseCsvLineToOrder(
 
     // Initialize remaining_quantity and cumulative_executed_quantity
     // trhough time, orders are executed, so the remaining quantity will decrease
-
     order.remaining_quantity = order.quantity; 
     order.cumulative_executed_quantity = 0;
     order.status = OrderStatus::UNKNOWN; 
@@ -272,33 +271,47 @@ std::optional<Order> parseCsvLineToOrder(
     return order;
 }
 
-
-
+// This function reads orders from a CSV file, line by line
+// creates Order objects from the parsed lines,
+// and pushes them into a thread-safe queue for further processing.
+/// istream : representes an input stream
 void readOrdersFromStream(std::istream& stream, Logger& logger, ThreadSafeQueue<Order>& order_queue,
 long int  max_queue_size_allowed) {
    
+    // declare a line, wich will contain every line read from the CSV
     std::string line;
+    //count number of lines
     long long line_number = 0;
+    //map to associate header namees to their index (position in the CSV)
     std::map<std::string, size_t> header_map;
 
     logger.info("Starting to read orders from stream...");
 
+    // First part of the function reads the header of the csv
+    // read the first line of the stream (the csv file)
     if (std::getline(stream, line)) {
+        //incrementation of the lines
         line_number++;
+        //cleaning
         std::string trimmed_header_line = trim_whitespace(line);
         if (trimmed_header_line.empty()) {
             logger.critical("Header line is empty. Aborting.");
             return;
         }
         logger.info("Reading header line: ", trimmed_header_line);
+
+        //stringstream is used to split the header line
         std::stringstream header_ss(trimmed_header_line);
+        // variable to hold each field in the header
         std::string header_field;
         size_t current_index = 0;
+        // read each field in the header line (separated by ,)
         while (std::getline(header_ss, header_field, ',')) {
             std::string trimmed_header_field = trim_whitespace(header_field);
             if (trimmed_header_field.empty()){
                 logger.warn("Empty column name found in header at index ", current_index, ". Original header: '", trimmed_header_line, "'");
             }
+            // store the column name and its index in the header_map
             header_map[trimmed_header_field] = current_index++;
         }
         if (header_map.empty()) {
@@ -310,16 +323,21 @@ long int  max_queue_size_allowed) {
         logger.error("Could not read header line from stream (empty file or stream error).");
         return;
     }
+
+    // Second part of the function reads the rest of the csv and transforms them in Orders
+    // count the number of orders
     long int order_succcess_parsed = 0;
+    // as long as we can read lines from the stream, we read the next line
     while (std::getline(stream, line)) {
         line_number++;
         std::string original_line_for_log = line; 
-        
+        //clean
         std::string trimmed_line = trim_whitespace(line);
         if (trimmed_line.empty()) {
             logger.debug("Skipping empty line at number: ", line_number);
             continue;
         }
+
 
         std::stringstream data_ss(trimmed_line); 
         std::string field_value;
@@ -327,7 +345,7 @@ long int  max_queue_size_allowed) {
         while (std::getline(data_ss, field_value, ',')) {
             fields.push_back(trim_whitespace(field_value)); 
         }
-
+        // check that the number of fields in the line matches the header count
         if (fields.size() != header_map.size()) {
             if (!fields.empty() || (fields.size() < header_map.size() && header_map.size() > 0) ) { 
                  logger.warn("Malformed data line (field count ", fields.size(), " does not match header count ", header_map.size(), ") at line ", line_number, ". Original line: '", original_line_for_log, "'");
@@ -335,10 +353,12 @@ long int  max_queue_size_allowed) {
              continue; 
         }
         
+        // convert the current line in an Order
         std::optional<Order> parsed_order_opt = parseCsvLineToOrder(fields, header_map, logger, original_line_for_log);
         if (parsed_order_opt) {
+            // if the queue is full, we wait
             while (order_queue.size() >= static_cast<long unsigned>(max_queue_size_allowed))
-            { // could use a condition variable here for better efficiency but reality is that it will not matter much in practice for 1 thread
+            { 
                 std::this_thread::sleep_for(std::chrono::milliseconds(1)); // Wait until space is available
             }
             order_queue.push(*parsed_order_opt); // Push to the thread-safe queue
@@ -350,6 +370,6 @@ long int  max_queue_size_allowed) {
 
     logger.info("Finished reading orders. Total lines processed (including header): ", 
         line_number, 
-        ". Orders successfully parsed: ", order_succcess_parsed);
+        "Orders successfully parsed: ", order_succcess_parsed);
   
 }
