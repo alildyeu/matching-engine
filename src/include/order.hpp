@@ -11,6 +11,7 @@
 #include "thread_safe_queue.hpp"
 #include <thread>
 #include <time.h>
+#include <atomic>
 
 
 

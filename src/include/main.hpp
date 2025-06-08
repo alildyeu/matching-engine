@@ -9,6 +9,7 @@
 #include <iomanip> 
 #include <chrono>
 #include "logger.hpp"
+#include <atomic>
 
 class TimingManager {
 public:

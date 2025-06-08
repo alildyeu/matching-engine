@@ -8,6 +8,7 @@
 #include <iostream>   // For ostream in OutputRecord, cerr
 #include <algorithm>  // For std::min
 #include <set>        // For ids_traded_this_event_
+#include <atomic>
 
 // Assumes order.hpp defines:
 // - struct Order (with all fields: timestamp, order_id, instrument, side, type, quantity, price, action,
